@@ -7,8 +7,10 @@ WORKDIR /app
 # Copy requirements first (for better layer caching)
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies and curl for healthcheck
+RUN pip install --no-cache-dir -r requirements.txt && \
+    apt-get update && apt-get install -y curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy the application code
 COPY . .
