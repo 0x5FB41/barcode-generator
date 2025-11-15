@@ -92,27 +92,47 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
         ward = sanitize_input(ward)[:30]
         room = sanitize_input(room)[:20]
 
-        # Generate barcode with disabled default text
-        options = {
+        # Create barcode with absolutely NO text using direct ImageWriter manipulation
+        writer = ImageWriter()
+
+        # Override the paint_text callback to prevent any text rendering
+        original_paint_text = writer._paint_text
+        writer._paint_text = lambda *args, **kwargs: None
+
+        code = Code128(patient_number, writer=writer)
+
+        # Generate barcode
+        temp_buffer = io.BytesIO()
+        code.write(temp_buffer, options={
             'module_width': 0.3,
             'module_height': 12,
             'quiet_zone': 3,
-            'background': 'white',
-            'foreground': 'black',
-            'font_size': 0,  # Disable default text
-            'text_distance': 0,
-        }
+            'font_size': 0,
+            'text_distance': 0
+        })
+        temp_buffer.seek(0)
 
-        code = Code128(patient_number, writer=ImageWriter())
-        buffer = io.BytesIO()
-        code.write(buffer, options=options)
-        buffer.seek(0)
-
-        barcode_img = Image.open(buffer)
+        barcode_img = Image.open(temp_buffer)
         barcode_width, barcode_height = barcode_img.size
 
-        # Text rendering with DejaVu Sans font (standard on Linux)
-        draw = ImageDraw.Draw(barcode_img)
+        # Restore the original method
+        writer._paint_text = original_paint_text
+
+        # Calculate dimensions
+        name_height = 60
+        info_height = 35
+        padding = 40
+        total_width = barcode_width + (padding * 2)
+        total_height = barcode_height + name_height + info_height + 60
+
+        # Create final image with proper dimensions
+        final_img = Image.new('RGB', (total_width, total_height), 'white')
+        draw = ImageDraw.Draw(final_img)
+
+        # Paste barcode centered
+        barcode_x = (total_width - barcode_width) // 2
+        barcode_y = name_height + 30
+        final_img.paste(barcode_img, (barcode_x, barcode_y))
 
         # Try to load DejaVu Sans first, then fallback to default
         try:
@@ -129,29 +149,14 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
                 name_font = ImageFont.load_default()
                 info_font = ImageFont.load_default()
 
-        # Calculate dimensions with better spacing
-        name_height = 60
-        info_height = 35
-        padding = 40
-        total_width = barcode_width + (padding * 2)
-        total_height = barcode_height + name_height + info_height + 60
-
-        # Create final image with proper dimensions
-        final_img = Image.new('RGB', (total_width, total_height), 'white')
-        draw = ImageDraw.Draw(final_img)
-
-        # Paste barcode centered
-        barcode_x = (total_width - barcode_width) // 2
-        barcode_y = name_height + 30
-        final_img.paste(barcode_img, (barcode_x, barcode_y))
-
+  
         # Draw patient name at top (larger font)
         name_bbox = draw.textbbox((0, 0), patient_name, font=name_font)
         name_x = (total_width - (name_bbox[2] - name_bbox[0])) // 2
         draw.text((name_x, 15), patient_name, fill='black', font=name_font)
 
-        # Draw ward and room info at bottom (only ward, room, and patient number once)
-        info_text = f"Ruangan: {ward} | Kamar: {room} | No: {patient_number}"
+        # Draw ward and room info at bottom (Indonesian only, no patient number)
+        info_text = f"Ruangan: {ward} | Kamar: {room}"
         info_bbox = draw.textbbox((0, 0), info_text, font=info_font)
         info_x = (total_width - (info_bbox[2] - info_bbox[0])) // 2
         draw.text((info_x, total_height - info_height - 15), info_text, fill='black', font=info_font)
@@ -318,10 +323,10 @@ if __name__ == '__main__':
     logger.info("Starting Patient Barcode Generator - SECURED VERSION")
     logger.info("Access: http://localhost:8090")
 
-    # Production-ready server
+    # Development server with debug for troubleshooting
     app.run(
         host='0.0.0.0',
         port=8090,
-        debug=False,  # NO DEBUG IN PRODUCTION
+        debug=True,  # Enable debug to see errors
         threaded=True
     )
