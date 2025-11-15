@@ -64,8 +64,8 @@ def validate_patient_data(patient_name, patient_number, ward, room):
     # Number validation
     if not patient_number:
         errors.append("Nomor pasien harus diisi")
-    elif not re.match(r'^\d{8,12}$', patient_number):
-        errors.append("Nomor pasien harus 8-12 digit angka")
+    elif not re.match(r'^\d{6,12}$', patient_number):
+        errors.append("Nomor pasien harus 6-12 digit angka")
 
     # Ward validation
     if not ward or len(ward.strip()) < 1:
@@ -92,13 +92,15 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
         ward = sanitize_input(ward)[:30]
         room = sanitize_input(room)[:20]
 
-        # Generate barcode
+        # Generate barcode with disabled default text
         options = {
             'module_width': 0.3,
             'module_height': 12,
             'quiet_zone': 3,
             'background': 'white',
             'foreground': 'black',
+            'font_size': 0,  # Disable default text
+            'text_distance': 0,
         }
 
         code = Code128(patient_number, writer=ImageWriter())
@@ -108,73 +110,51 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
 
         barcode_img = Image.open(buffer)
         barcode_width, barcode_height = barcode_img.size
-        padding = 40
-
-        # Calculate dimensions
-        name_height = 40
-        info_height = 30
-        number_height = 40
-        total_width = barcode_width + (padding * 2)
-        total_height = barcode_height + name_height + info_height + number_height + 20
-
-        final_img = Image.new('RGB', (total_width, total_height), 'white')
-        barcode_x = (total_width - barcode_width) // 2
-        barcode_y = name_height + info_height + 10
-        final_img.paste(barcode_img, (barcode_x, barcode_y))
 
         # Text rendering with DejaVu Sans font (standard on Linux)
-        draw = ImageDraw.Draw(final_img)
+        draw = ImageDraw.Draw(barcode_img)
 
         # Try to load DejaVu Sans first, then fallback to default
         try:
             # DejaVu Sans is standard on most Linux systems
-            name_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
-            info_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-            number_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+            name_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+            info_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
         except:
             try:
                 # Fallback to Arial (Windows/macOS)
-                name_font = ImageFont.truetype("arial.ttf", 28)
-                info_font = ImageFont.truetype("arial.ttf", 20)
-                number_font = ImageFont.truetype("arial.ttf", 24)
+                name_font = ImageFont.truetype("arial.ttf", 32)
+                info_font = ImageFont.truetype("arial.ttf", 24)
             except:
-                # Last resort: default font with larger sizes
+                # Last resort: default font
                 name_font = ImageFont.load_default()
                 info_font = ImageFont.load_default()
-                number_font = ImageFont.load_default()
 
-        # Layout: Name on top, Barcode in middle, Room/Number at bottom
-        padding = 40
-
-        # Calculate dimensions
-        name_height = 50
+        # Calculate dimensions with better spacing
+        name_height = 60
         info_height = 35
-        number_height = 35
-        total_height = barcode_height + name_height + info_height + number_height + 60
-        final_img = Image.new('RGB', (total_width, total_height), 'white')
+        padding = 40
+        total_width = barcode_width + (padding * 2)
+        total_height = barcode_height + name_height + info_height + 60
 
-        # Redraw barcode on resized canvas
+        # Create final image with proper dimensions
+        final_img = Image.new('RGB', (total_width, total_height), 'white')
         draw = ImageDraw.Draw(final_img)
+
+        # Paste barcode centered
         barcode_x = (total_width - barcode_width) // 2
         barcode_y = name_height + 30
         final_img.paste(barcode_img, (barcode_x, barcode_y))
 
-        # Draw text elements
-        # 1. Patient name at top (larger)
+        # Draw patient name at top (larger font)
         name_bbox = draw.textbbox((0, 0), patient_name, font=name_font)
         name_x = (total_width - (name_bbox[2] - name_bbox[0])) // 2
         draw.text((name_x, 15), patient_name, fill='black', font=name_font)
 
-        # 2. Ward and Room at bottom (medium)
-        ward_room_text = f"Ruangan: {ward} | Kamar: {room}"
-        info_bbox = draw.textbbox((0, 0), ward_room_text, font=info_font)
+        # Draw ward and room info at bottom (only ward, room, and patient number once)
+        info_text = f"Ruangan: {ward} | Kamar: {room} | No: {patient_number}"
+        info_bbox = draw.textbbox((0, 0), info_text, font=info_font)
         info_x = (total_width - (info_bbox[2] - info_bbox[0])) // 2
-        draw.text((info_x, total_height - number_height - 15), ward_room_text, fill='black', font=info_font)
-
-        # 3. Patient number under barcode (medium)
-        number_bbox = draw.textbbox((0, 0), patient_number, font=number_font)
-        number_x = (total_width - (number_bbox[2] - number_bbox[0])) // 2
-        draw.text((number_x, barcode_y + barcode_height + 15), patient_number, fill='black', font=number_font)
+        draw.text((info_x, total_height - info_height - 15), info_text, fill='black', font=info_font)
 
         # Save or return
         if filename:
