@@ -5,7 +5,7 @@ services:
     build: .
     container_name: patient-barcode-generator
     ports:
-      - "8090:8090"
+      - "58104:8090"
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
