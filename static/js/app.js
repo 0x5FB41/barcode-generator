@@ -21,9 +21,7 @@ async function handleSingleForm(e) {
 
     const data = {
         patient_name: document.getElementById('singleName').value.trim(),
-        patient_number: document.getElementById('singleNumber').value.trim(),
-        ward: document.getElementById('singleWard').value.trim(),
-        room: document.getElementById('singleRoom').value.trim()
+        patient_number: document.getElementById('singleNumber').value.trim()
     };
 
     if (!validateForm(data)) {
@@ -132,14 +130,12 @@ function parseBatchData(csvData) {
 
     lines.forEach(line => {
         const parts = line.split(',').map(part => part.trim());
-        if (parts.length === 4) {
-            const [name, number, ward, room] = parts;
-            if (name && number && ward && room) {
+        if (parts.length === 2) {
+            const [name, number] = parts;
+            if (name && number) {
                 patients.push({
                     patient_name: name,
-                    patient_number: number,
-                    ward: ward,
-                    room: room
+                    patient_number: number
                 });
             }
         }
@@ -163,11 +159,8 @@ function addBarcodeToResults(result, data) {
             <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
                     <h6>${data.patient_name} - ${data.patient_number}</h6>
-                    <div class="barcode-info">
-                        Ruangan: ${data.ward} | Kamar: ${data.room}
-                    </div>
                 </div>
-                <button class="btn btn-sm btn-primary ms-2" onclick="downloadSingleBarcode('${data.patient_number}', '${data.patient_name}', '${data.ward}', '${data.room}')">
+                <button class="btn btn-sm btn-primary ms-2" onclick="downloadSingleBarcode('${data.patient_number}', '${data.patient_name}')">
                     Download
                 </button>
             </div>
@@ -193,11 +186,8 @@ function displayBatchResults(results) {
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
                             <h6>${result.patient.patient_name} - ${result.patient.patient_number}</h6>
-                            <div class="barcode-info">
-                                Ruangan: ${result.patient.ward} | Kamar: ${result.patient.room}
-                            </div>
                         </div>
-                        <button class="btn btn-sm btn-primary ms-2" onclick="downloadSingleBarcode('${result.patient.patient_number}', '${result.patient.patient_name}', '${result.patient.ward}', '${result.patient.room}')">
+                        <button class="btn btn-sm btn-primary ms-2" onclick="downloadSingleBarcode('${result.patient.patient_number}', '${result.patient.patient_name}')">
                             Download
                         </button>
                     </div>
@@ -223,7 +213,7 @@ function displayBatchResults(results) {
 }
 
 // Download single barcode
-async function downloadSingleBarcode(patientNumber, patientName, ward, room) {
+async function downloadSingleBarcode(patientNumber, patientName) {
     try {
         const response = await fetch('/api/download-barcode', {
             method: 'POST',
@@ -232,9 +222,7 @@ async function downloadSingleBarcode(patientNumber, patientName, ward, room) {
             },
             body: JSON.stringify({
                 patient_name: patientName,
-                patient_number: patientNumber,
-                ward: ward,
-                room: room
+                patient_number: patientNumber
             })
         });
 
@@ -267,7 +255,7 @@ async function downloadAllBarcodes() {
 
     for (let i = 0; i < generatedBarcodes.length; i++) {
         const { data } = generatedBarcodes[i];
-        await downloadSingleBarcode(data.patient_number, data.patient_name, data.ward, data.room);
+        await downloadSingleBarcode(data.patient_number, data.patient_name);
         // Small delay between downloads
         await sleep(500);
     }
@@ -290,16 +278,6 @@ function validateForm(data) {
 
     if (!data.patient_number || !/^\d{1,8}$/.test(data.patient_number)) {
         showNotification('Nomor pasien maksimal 8 digit angka', 'danger');
-        return false;
-    }
-
-    if (!data.ward || data.ward.length < 1) {
-        showNotification('Ruangan harus diisi', 'danger');
-        return false;
-    }
-
-    if (!data.room || data.room.length < 1) {
-        showNotification('Kamar harus diisi', 'danger');
         return false;
     }
 

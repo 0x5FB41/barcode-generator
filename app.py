@@ -51,7 +51,7 @@ def sanitize_input(text):
     text = text.replace("'", '&#x27;')
     return text.strip()
 
-def validate_patient_data(patient_name, patient_number, ward, room):
+def validate_patient_data(patient_name, patient_number):
     """Enhanced input validation"""
     errors = []
 
@@ -72,18 +72,6 @@ def validate_patient_data(patient_name, patient_number, ward, room):
         errors.append("Nomor pasien maksimal 8 digit")
     elif len(patient_number) < 1:
         errors.append("Nomor pasien minimal 1 digit")
-
-    # Ward validation
-    if not ward or len(ward.strip()) < 1:
-        errors.append("Ruangan harus diisi")
-    elif len(ward.strip()) > 30:
-        errors.append("Ruangan maksimal 30 karakter")
-
-    # Room validation
-    if not room or len(room.strip()) < 1:
-        errors.append("Kamar harus diisi")
-    elif len(room.strip()) > 20:
-        errors.append("Kamar maksimal 20 karakter")
 
     return errors
 
@@ -119,7 +107,7 @@ class NoTextWriter(ImageWriter):
         """Override paint_text to do nothing - no text will be rendered"""
         pass
 
-def generate_barcode_with_patient_data(patient_number, patient_name, ward, room, filename=None):
+def generate_barcode_with_patient_data(patient_number, patient_name, filename=None):
     """Generate barcode with enhanced error handling"""
     try:
         logger.info(f"Generating barcode: {patient_name} ({patient_number})")
@@ -129,8 +117,6 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
         patient_number = re.sub(r'[^\d]', '', str(patient_number))
         # Pad patient number to 8 digits with leading zeros
         patient_number = patient_number.zfill(8)
-        ward = sanitize_input(ward)[:30]
-        room = sanitize_input(room)[:20]
 
         # Create barcode with custom writer that has NO text rendering
         writer = NoTextWriter()
@@ -149,12 +135,11 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
         barcode_img = Image.open(temp_buffer)
         barcode_width, barcode_height = barcode_img.size
 
-        # Calculate dimensions for more rectangular shape
+        # Calculate dimensions for more rectangular shape (no info text needed)
         name_height = 60  # Reduced for tighter spacing
-        info_height = 40  # Reduced for tighter spacing
         padding = 30  # Reduced horizontal padding
         total_width = barcode_width + (padding * 2)
-        total_height = barcode_height + name_height + info_height + 30  # Reduced overall height
+        total_height = barcode_height + name_height + 20  # Reduced overall height
 
         # Create final image with proper dimensions
         final_img = Image.new('RGB', (total_width, total_height), 'white')
@@ -180,7 +165,6 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
             try:
                 if "Bold" in name_path:
                     name_font = ImageFont.truetype(name_path, 38)  # Larger name font
-                    info_font = ImageFont.truetype(name_path.replace("-Bold", ""), 20)  # Info font to 20pt
                     font_loaded = True
                     break
             except:
@@ -190,45 +174,25 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
             try:
                 # Fallback to Arial (Windows/macOS)
                 name_font = ImageFont.truetype("arial.ttf", 38)
-                info_font = ImageFont.truetype("arial.ttf", 20)
                 font_loaded = True
             except:
                 try:
                     # Try system default fonts
                     name_font = ImageFont.truetype("arialbd.ttf", 38)  # Arial Bold
-                    info_font = ImageFont.truetype("arial.ttf", 20)
                     font_loaded = True
                 except:
                     # Last resort: PIL default font
                     name_font = ImageFont.load_default()
-                    info_font = ImageFont.load_default()
                     font_loaded = True
 
         logger.info(f"Font loading status: {font_loaded}")
 
-  
         # Draw patient name (larger font, moved closer to top)
         name_bbox = draw.textbbox((0, 0), patient_name, font=name_font)
         name_x = (total_width - (name_bbox[2] - name_bbox[0])) // 2
         draw.text((name_x, 10), patient_name, fill='black', font=name_font)  # Moved up to 10
 
-        # Draw ward and room info at bottom in two lines (smaller font)
-        ward_text = f"Ruangan: {ward}"
-        room_text = f"Kamar: {room}"
-
-        # Ward text (first line) - very close to barcode
-        ward_bbox = draw.textbbox((0, 0), ward_text, font=info_font)
-        ward_x = (total_width - (ward_bbox[2] - ward_bbox[0])) // 2
-        draw.text((ward_x, barcode_y + barcode_height + 5), ward_text, fill='black', font=info_font)
-
-        # Room text (second line) - positioned below ward text with tight spacing
-        room_bbox = draw.textbbox((0, 0), room_text, font=info_font)
-        room_x = (total_width - (room_bbox[2] - room_bbox[0])) // 2
-        draw.text((room_x, barcode_y + barcode_height + 25), room_text, fill='black', font=info_font)
-
         # DEBUG: Log what we're actually drawing
-        logger.info(f"DEBUG: Drawing ward_text='{ward_text}' at position ({ward_x}, {barcode_y + barcode_height + 5})")
-        logger.info(f"DEBUG: Drawing room_text='{room_text}' at position ({room_x}, {barcode_y + barcode_height + 25})")
         logger.info(f"DEBUG: Patient name='{patient_name}' at position ({name_x}, 10)")
 
         # Save or return
@@ -267,22 +231,20 @@ def api_generate_barcode():
         # Extract and validate data
         patient_name = sanitize_input(data.get('patient_name', ''))
         patient_number = data.get('patient_number', '').strip()
-        ward = sanitize_input(data.get('ward', ''))
-        room = sanitize_input(data.get('room', ''))
 
         # Apply zero-padding before validation for consistency
         patient_number_clean = re.sub(r'[^\d]', '', str(patient_number))
         patient_number_padded = patient_number_clean.zfill(8)
 
         # Enhanced validation
-        errors = validate_patient_data(patient_name, patient_number, ward, room)
+        errors = validate_patient_data(patient_name, patient_number)
         if errors:
             return jsonify({'success': False, 'error': '; '.join(errors)}), 400
 
         # Generate barcode using padded number
         try:
             image_buffer = generate_barcode_with_patient_data(
-                patient_number_padded, patient_name, ward, room
+                patient_number_padded, patient_name
             )
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -295,9 +257,7 @@ def api_generate_barcode():
                 'filename': filename,
                 'patient_data': {
                     'name': patient_name,
-                    'number': patient_number_padded,  # Return padded number
-                    'ward': ward,
-                    'room': room
+                    'number': patient_number_padded  # Return padded number
                 }
             })
 
@@ -325,21 +285,19 @@ def api_download_barcode():
         data = request.get_json()
         patient_name = sanitize_input(data.get('patient_name', ''))
         patient_number = data.get('patient_number', '').strip()
-        ward = sanitize_input(data.get('ward', ''))
-        room = sanitize_input(data.get('room', ''))
 
         # Apply zero-padding before validation for consistency
         patient_number_clean = re.sub(r'[^\d]', '', str(patient_number))
         patient_number_padded = patient_number_clean.zfill(8)
 
         # Validation
-        errors = validate_patient_data(patient_name, patient_number, ward, room)
+        errors = validate_patient_data(patient_name, patient_number)
         if errors:
             return jsonify({'success': False, 'error': '; '.join(errors)}), 400
 
         try:
             image_buffer = generate_barcode_with_patient_data(
-                patient_number_padded, patient_name, ward, room
+                patient_number_padded, patient_name
             )
 
             safe_name = secure_filename(patient_name).replace(' ', '_')

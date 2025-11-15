@@ -34,20 +34,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Ruangan *</label>
-                                        <input type="text" class="form-control" id="singleWard" required>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Kamar *</label>
-                                        <input type="text" class="form-control" id="singleRoom" required>
-                                    </div>
-                                </div>
-                            </div>
                             <button type="submit" class="btn btn-primary">Generate Barcode</button>
                         </form>
                     </div>
@@ -61,11 +47,11 @@
                     <div class="card-body">
                         <form id="batchForm">
                             <div class="mb-3">
-                                <label class="form-label">Data Pasien (CSV Format: nama,nomor,ruangan,kamar)</label>
+                                <label class="form-label">Data Pasien (CSV Format: nama,nomor)</label>
                                 <textarea class="form-control" id="batchData" rows="6" placeholder="Contoh:
-John Doe,12345678,ICU,101
-Jane Smith,98765432,Bedah,A-202
-Ahmad Rahman,45678901,Anak,B-101"></textarea>
+John Doe,12345678
+Jane Smith,98765432
+Ahmad Rahman,45678901"></textarea>
                             </div>
                             <button type="submit" class="btn btn-success">Generate All Barcodes</button>
                         </form>
