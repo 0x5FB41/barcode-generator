@@ -1,0 +1,25 @@
+# Claude Code & Development Files
+.claude/
+.playwright-mcp/
+.serena/
+__pycache__/
+
+# Generated Files
+*.png
+*.jpg
+*.jpeg
+
+# Test & Development Files
+test_*.py
+*_test.py
+tes.*
+deploy_production.sh
+*_FIXED
+app_secure.py
+final_*
+simple_*
+
+# Temporary Files
+*.json
+*.xlsx
+*.sh
