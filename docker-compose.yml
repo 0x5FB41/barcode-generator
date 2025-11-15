@@ -5,19 +5,13 @@ services:
     build: .
     container_name: patient-barcode-generator
     ports:
-      - "5000:5000"
+      - "8090:8090"
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
     volumes:
       - ./generated_barcodes:/app/generated_barcodes
     restart: unless-stopped
-    networks:
-      - barcode-network
-
-networks:
-  barcode-network:
-    driver: bridge
 
 volumes:
   generated_barcodes:
