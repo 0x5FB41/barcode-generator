@@ -122,43 +122,56 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
         barcode_y = name_height + info_height + 10
         final_img.paste(barcode_img, (barcode_x, barcode_y))
 
-        # Text rendering
+        # Text rendering with DejaVu Sans font (standard on Linux)
         draw = ImageDraw.Draw(final_img)
 
-        # Font handling with multiple fallbacks
-        fonts_tried = [
-            ("arial.ttf", 20, 16, 24),
-            ("C:/Windows/Fonts/arial.ttf", 20, 16, 24),
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18, 14, 22),
-            ("/System/Library/Fonts/Arial.ttf", 20, 16, 24)
-        ]
-
-        name_font = info_font = number_font = None
-        for font_path, name_size, info_size, number_size in fonts_tried:
+        # Try to load DejaVu Sans first, then fallback to default
+        try:
+            # DejaVu Sans is standard on most Linux systems
+            name_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+            info_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+            number_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+        except:
             try:
-                name_font = ImageFont.truetype(font_path, name_size)
-                info_font = ImageFont.truetype(font_path, info_size)
-                number_font = ImageFont.truetype(font_path, number_size)
-                break
+                # Fallback to Arial (Windows/macOS)
+                name_font = ImageFont.truetype("arial.ttf", 28)
+                info_font = ImageFont.truetype("arial.ttf", 20)
+                number_font = ImageFont.truetype("arial.ttf", 24)
             except:
-                continue
+                # Last resort: default font with larger sizes
+                name_font = ImageFont.load_default()
+                info_font = ImageFont.load_default()
+                number_font = ImageFont.load_default()
 
-        # Fallback to default font
-        if not name_font:
-            name_font = ImageFont.load_default()
-            info_font = ImageFont.load_default()
-            number_font = ImageFont.load_default()
+        # Layout: Name on top, Barcode in middle, Room/Number at bottom
+        padding = 40
 
-        # Draw text
+        # Calculate dimensions
+        name_height = 50
+        info_height = 35
+        number_height = 35
+        total_height = barcode_height + name_height + info_height + number_height + 60
+        final_img = Image.new('RGB', (total_width, total_height), 'white')
+
+        # Redraw barcode on resized canvas
+        draw = ImageDraw.Draw(final_img)
+        barcode_x = (total_width - barcode_width) // 2
+        barcode_y = name_height + 30
+        final_img.paste(barcode_img, (barcode_x, barcode_y))
+
+        # Draw text elements
+        # 1. Patient name at top (larger)
         name_bbox = draw.textbbox((0, 0), patient_name, font=name_font)
         name_x = (total_width - (name_bbox[2] - name_bbox[0])) // 2
-        draw.text((name_x, 10), patient_name, fill='black', font=name_font)
+        draw.text((name_x, 15), patient_name, fill='black', font=name_font)
 
+        # 2. Ward and Room at bottom (medium)
         ward_room_text = f"Ruangan: {ward} | Kamar: {room}"
         info_bbox = draw.textbbox((0, 0), ward_room_text, font=info_font)
         info_x = (total_width - (info_bbox[2] - info_bbox[0])) // 2
-        draw.text((info_x, name_height + 15), ward_room_text, fill='black', font=info_font)
+        draw.text((info_x, total_height - number_height - 15), ward_room_text, fill='black', font=info_font)
 
+        # 3. Patient number under barcode (medium)
         number_bbox = draw.textbbox((0, 0), patient_number, font=number_font)
         number_x = (total_width - (number_bbox[2] - number_bbox[0])) // 2
         draw.text((number_x, barcode_y + barcode_height + 15), patient_number, fill='black', font=number_font)

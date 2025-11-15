@@ -7,9 +7,9 @@ WORKDIR /app
 # Copy requirements first (for better layer caching)
 COPY requirements.txt .
 
-# Install Python dependencies and curl for healthcheck
+# Install Python dependencies, curl for healthcheck, and DejaVu fonts
 RUN pip install --no-cache-dir -r requirements.txt && \
-    apt-get update && apt-get install -y curl && \
+    apt-get update && apt-get install -y curl fonts-dejavu-core && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy the application code
