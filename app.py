@@ -6,7 +6,9 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import os
 import re
-import sys
+import threading
+import time
+import schedule
 from datetime import datetime
 import logging
 from werkzeug.utils import secure_filename
@@ -64,8 +66,12 @@ def validate_patient_data(patient_name, patient_number, ward, room):
     # Number validation
     if not patient_number:
         errors.append("Nomor pasien harus diisi")
-    elif not re.match(r'^\d{6,12}$', patient_number):
-        errors.append("Nomor pasien harus 6-12 digit angka")
+    elif not re.match(r'^\d+$', patient_number):
+        errors.append("Nomor pasien harus berupa angka")
+    elif len(patient_number) > 8:
+        errors.append("Nomor pasien maksimal 8 digit")
+    elif len(patient_number) < 1:
+        errors.append("Nomor pasien minimal 1 digit")
 
     # Ward validation
     if not ward or len(ward.strip()) < 1:
@@ -81,6 +87,38 @@ def validate_patient_data(patient_name, patient_number, ward, room):
 
     return errors
 
+def clear_generated_barcodes():
+    """Clear all generated barcode files - runs automatically at midnight"""
+    try:
+        upload_folder = app.config['UPLOAD_FOLDER']
+        if os.path.exists(upload_folder):
+            files = os.listdir(upload_folder)
+            deleted_count = 0
+            for file in files:
+                file_path = os.path.join(upload_folder, file)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    deleted_count += 1
+            logger.info(f"Auto-clear: Deleted {deleted_count} barcode files at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            logger.info("Auto-clear: Upload folder does not exist, nothing to clear")
+    except Exception as e:
+        logger.error(f"Auto-clear error: {str(e)}")
+
+def run_scheduler():
+    """Run the scheduler in a separate thread"""
+    schedule.every().day.at("00:00").do(clear_generated_barcodes)
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  # Check every minute
+
+class NoTextWriter(ImageWriter):
+    """Custom ImageWriter that completely disables text rendering"""
+
+    def paint_text(self, xpos, ypos):
+        """Override paint_text to do nothing - no text will be rendered"""
+        pass
+
 def generate_barcode_with_patient_data(patient_number, patient_name, ward, room, filename=None):
     """Generate barcode with enhanced error handling"""
     try:
@@ -89,16 +127,13 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
         # Sanitize all inputs
         patient_name = sanitize_input(patient_name)[:50]
         patient_number = re.sub(r'[^\d]', '', str(patient_number))
+        # Pad patient number to 8 digits with leading zeros
+        patient_number = patient_number.zfill(8)
         ward = sanitize_input(ward)[:30]
         room = sanitize_input(room)[:20]
 
-        # Create barcode with absolutely NO text using direct ImageWriter manipulation
-        writer = ImageWriter()
-
-        # Override the paint_text callback to prevent any text rendering
-        original_paint_text = writer._paint_text
-        writer._paint_text = lambda *args, **kwargs: None
-
+        # Create barcode with custom writer that has NO text rendering
+        writer = NoTextWriter()
         code = Code128(patient_number, writer=writer)
 
         # Generate barcode
@@ -107,59 +142,94 @@ def generate_barcode_with_patient_data(patient_number, patient_name, ward, room,
             'module_width': 0.3,
             'module_height': 12,
             'quiet_zone': 3,
-            'font_size': 0,
-            'text_distance': 0
+            # Remove font_size=0 to avoid ppem error, rely on custom writer instead
         })
         temp_buffer.seek(0)
 
         barcode_img = Image.open(temp_buffer)
         barcode_width, barcode_height = barcode_img.size
 
-        # Restore the original method
-        writer._paint_text = original_paint_text
-
-        # Calculate dimensions
-        name_height = 60
-        info_height = 35
-        padding = 40
+        # Calculate dimensions for more rectangular shape
+        name_height = 60  # Reduced for tighter spacing
+        info_height = 40  # Reduced for tighter spacing
+        padding = 30  # Reduced horizontal padding
         total_width = barcode_width + (padding * 2)
-        total_height = barcode_height + name_height + info_height + 60
+        total_height = barcode_height + name_height + info_height + 30  # Reduced overall height
 
         # Create final image with proper dimensions
         final_img = Image.new('RGB', (total_width, total_height), 'white')
         draw = ImageDraw.Draw(final_img)
 
-        # Paste barcode centered
+        # Paste barcode centered with tighter spacing
         barcode_x = (total_width - barcode_width) // 2
-        barcode_y = name_height + 30
+        barcode_y = name_height + 10  # Reduced spacing between name and barcode
         final_img.paste(barcode_img, (barcode_x, barcode_y))
 
-        # Try to load DejaVu Sans first, then fallback to default
-        try:
-            # DejaVu Sans is standard on most Linux systems
-            name_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-            info_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-        except:
+        # Try to load fonts with multiple fallback paths for cross-platform consistency
+        font_loaded = False
+
+        # Try standard Linux DejaVu paths
+        dejavu_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf"
+        ]
+
+        for name_path in dejavu_paths:
+            try:
+                if "Bold" in name_path:
+                    name_font = ImageFont.truetype(name_path, 38)  # Larger name font
+                    info_font = ImageFont.truetype(name_path.replace("-Bold", ""), 20)  # Info font to 20pt
+                    font_loaded = True
+                    break
+            except:
+                continue
+
+        if not font_loaded:
             try:
                 # Fallback to Arial (Windows/macOS)
-                name_font = ImageFont.truetype("arial.ttf", 32)
-                info_font = ImageFont.truetype("arial.ttf", 24)
+                name_font = ImageFont.truetype("arial.ttf", 38)
+                info_font = ImageFont.truetype("arial.ttf", 20)
+                font_loaded = True
             except:
-                # Last resort: default font
-                name_font = ImageFont.load_default()
-                info_font = ImageFont.load_default()
+                try:
+                    # Try system default fonts
+                    name_font = ImageFont.truetype("arialbd.ttf", 38)  # Arial Bold
+                    info_font = ImageFont.truetype("arial.ttf", 20)
+                    font_loaded = True
+                except:
+                    # Last resort: PIL default font
+                    name_font = ImageFont.load_default()
+                    info_font = ImageFont.load_default()
+                    font_loaded = True
+
+        logger.info(f"Font loading status: {font_loaded}")
 
   
-        # Draw patient name at top (larger font)
+        # Draw patient name (larger font, moved closer to top)
         name_bbox = draw.textbbox((0, 0), patient_name, font=name_font)
         name_x = (total_width - (name_bbox[2] - name_bbox[0])) // 2
-        draw.text((name_x, 15), patient_name, fill='black', font=name_font)
+        draw.text((name_x, 10), patient_name, fill='black', font=name_font)  # Moved up to 10
 
-        # Draw ward and room info at bottom (Indonesian only, no patient number)
-        info_text = f"Ruangan: {ward} | Kamar: {room}"
-        info_bbox = draw.textbbox((0, 0), info_text, font=info_font)
-        info_x = (total_width - (info_bbox[2] - info_bbox[0])) // 2
-        draw.text((info_x, total_height - info_height - 15), info_text, fill='black', font=info_font)
+        # Draw ward and room info at bottom in two lines (smaller font)
+        ward_text = f"Ruangan: {ward}"
+        room_text = f"Kamar: {room}"
+
+        # Ward text (first line) - very close to barcode
+        ward_bbox = draw.textbbox((0, 0), ward_text, font=info_font)
+        ward_x = (total_width - (ward_bbox[2] - ward_bbox[0])) // 2
+        draw.text((ward_x, barcode_y + barcode_height + 5), ward_text, fill='black', font=info_font)
+
+        # Room text (second line) - positioned below ward text with tight spacing
+        room_bbox = draw.textbbox((0, 0), room_text, font=info_font)
+        room_x = (total_width - (room_bbox[2] - room_bbox[0])) // 2
+        draw.text((room_x, barcode_y + barcode_height + 25), room_text, fill='black', font=info_font)
+
+        # DEBUG: Log what we're actually drawing
+        logger.info(f"DEBUG: Drawing ward_text='{ward_text}' at position ({ward_x}, {barcode_y + barcode_height + 5})")
+        logger.info(f"DEBUG: Drawing room_text='{room_text}' at position ({room_x}, {barcode_y + barcode_height + 25})")
+        logger.info(f"DEBUG: Patient name='{patient_name}' at position ({name_x}, 10)")
 
         # Save or return
         if filename:
@@ -200,20 +270,24 @@ def api_generate_barcode():
         ward = sanitize_input(data.get('ward', ''))
         room = sanitize_input(data.get('room', ''))
 
+        # Apply zero-padding before validation for consistency
+        patient_number_clean = re.sub(r'[^\d]', '', str(patient_number))
+        patient_number_padded = patient_number_clean.zfill(8)
+
         # Enhanced validation
         errors = validate_patient_data(patient_name, patient_number, ward, room)
         if errors:
             return jsonify({'success': False, 'error': '; '.join(errors)}), 400
 
-        # Generate barcode
+        # Generate barcode using padded number
         try:
             image_buffer = generate_barcode_with_patient_data(
-                patient_number, patient_name, ward, room
+                patient_number_padded, patient_name, ward, room
             )
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_name = secure_filename(patient_name).replace(' ', '_')
-            filename = f"{patient_number}_{safe_name}_{timestamp}.png"
+            filename = f"{patient_number_padded}_{safe_name}_{timestamp}.png"
 
             return jsonify({
                 'success': True,
@@ -221,7 +295,7 @@ def api_generate_barcode():
                 'filename': filename,
                 'patient_data': {
                     'name': patient_name,
-                    'number': patient_number,
+                    'number': patient_number_padded,  # Return padded number
                     'ward': ward,
                     'room': room
                 }
@@ -254,6 +328,10 @@ def api_download_barcode():
         ward = sanitize_input(data.get('ward', ''))
         room = sanitize_input(data.get('room', ''))
 
+        # Apply zero-padding before validation for consistency
+        patient_number_clean = re.sub(r'[^\d]', '', str(patient_number))
+        patient_number_padded = patient_number_clean.zfill(8)
+
         # Validation
         errors = validate_patient_data(patient_name, patient_number, ward, room)
         if errors:
@@ -261,11 +339,11 @@ def api_download_barcode():
 
         try:
             image_buffer = generate_barcode_with_patient_data(
-                patient_number, patient_name, ward, room
+                patient_number_padded, patient_name, ward, room
             )
 
             safe_name = secure_filename(patient_name).replace(' ', '_')
-            filename = f"{patient_number}_{safe_name}.png"
+            filename = f"{patient_number_padded}_{safe_name}.png"
 
             return send_file(
                 image_buffer,
@@ -320,13 +398,18 @@ if __name__ == '__main__':
     os.makedirs('static', exist_ok=True)
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+    # Start the auto-clearing scheduler in a separate thread
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    logger.info("Auto-clearing scheduler started - will clear generated barcodes daily at midnight")
+
     logger.info("Starting Patient Barcode Generator - SECURED VERSION")
-    logger.info("Access: http://localhost:8090")
+    logger.info("Access: http://localhost:8091")
 
     # Development server with debug for troubleshooting
     app.run(
         host='0.0.0.0',
-        port=8090,
+        port=8091,  # Change port to avoid conflicts
         debug=True,  # Enable debug to see errors
         threaded=True
     )

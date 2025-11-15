@@ -288,8 +288,8 @@ function validateForm(data) {
         return false;
     }
 
-    if (!data.patient_number || !/^\d{8,12}$/.test(data.patient_number)) {
-        showNotification('Nomor pasien harus 8-12 digit angka', 'danger');
+    if (!data.patient_number || !/^\d{1,8}$/.test(data.patient_number)) {
+        showNotification('Nomor pasien maksimal 8 digit angka', 'danger');
         return false;
     }
 

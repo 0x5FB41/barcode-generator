@@ -1,7 +1,0 @@
-Flask==2.3.3
-Flask-CORS==4.0.0
-python-barcode==0.15.1
-Pillow==10.0.1
-gunicorn==21.2.0
-bleach==6.1.0
-waitress==3.0.0

@@ -7,9 +7,9 @@ WORKDIR /app
 # Copy requirements first (for better layer caching)
 COPY requirements.txt .
 
-# Install Python dependencies, curl for healthcheck, and DejaVu fonts
+# Install Python dependencies, curl for healthcheck, and full DejaVu fonts with bold variants
 RUN pip install --no-cache-dir -r requirements.txt && \
-    apt-get update && apt-get install -y curl fonts-dejavu-core && \
+    apt-get update && apt-get install -y curl fonts-dejavu fonts-dejavu-extra && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy the application code
@@ -23,7 +23,7 @@ COPY templates/ templates/
 COPY static/ static/
 
 # Expose port (matches app.py port)
-EXPOSE 8090
+EXPOSE 8091
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
