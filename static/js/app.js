@@ -253,11 +253,45 @@ async function downloadAllBarcodes() {
         return;
     }
 
+    showNotification(`Mengunduh ${generatedBarcodes.length} barcode...`, 'info');
+    let successCount = 0;
+    let errorCount = 0;
+
     for (let i = 0; i < generatedBarcodes.length; i++) {
-        const { data } = generatedBarcodes[i];
-        await downloadSingleBarcode(data.patient_number, data.patient_name);
+        const item = generatedBarcodes[i];
+
+        // Handle both single form and batch form structures
+        let patientNumber, patientName;
+        if (item.data) {
+            // Single form structure: {result, data}
+            patientNumber = item.data.patient_number;
+            patientName = item.data.patient_name;
+        } else if (item.patient) {
+            // Batch form structure: {result, patient}
+            patientNumber = item.patient.patient_number;
+            patientName = item.patient.patient_name;
+        } else {
+            console.error('Invalid barcode data structure:', item);
+            errorCount++;
+            continue;
+        }
+
+        try {
+            await downloadSingleBarcode(patientNumber, patientName);
+            successCount++;
+        } catch (error) {
+            console.error(`Failed to download barcode for ${patientName}:`, error);
+            errorCount++;
+        }
+
         // Small delay between downloads
         await sleep(500);
+    }
+
+    if (errorCount === 0) {
+        showNotification(`Berhasil mengunduh ${successCount} barcode!`, 'success');
+    } else {
+        showNotification(`Selesai: ${successCount} berhasil, ${errorCount} gagal`, 'warning');
     }
 }
 
